@@ -57,17 +57,22 @@ int main(int argc, char * argv[]){
   char currDir[1024];
   char outDir[1024];
   if (getcwd(currDir, sizeof(currDir)) == NULL)
+  {
     fprintf(stderr, "Could not read current working directory.");
+    return 0;
+  }
   strcpy(outDir, currDir);
   if(argc >= 4){
     if(argv[5] != "-d"){
       fprintf(stderr, "Expecting -d flag. Usage is './sorter -c [sortcol] -d [in directory] -o [out directory]'");
+      return 0;
     }
-    strcpy(outDir, argv[4]);
+    strcpy(currDir, argv[4]);
   }
   if(argc == 6){
     if(argv[5] != "-o"){
       fprintf(stderr, "Expecting -o flag. Usage is './sorter -c [sortcol] -d [in directory] -o [out directory]'");
+      return 0;
     }
     strcpy(outDir, argv[6]);
   }
