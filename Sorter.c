@@ -5,15 +5,26 @@
 #include <stdlib.h>
 #include <dirent.h>
 #include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include "Sorter.h"
 #include "mergesort.c"
 
-int main(int argc, char * argv[]){
+//for testing a specific file
+/*int main(void){
+  FILE * file = fopen("movie_metadata.csv", "r");
+  char * filename = "sort_movies.csv";
+  sortFile(15, NULL, file, filename);
+  fclose(file);
+  return 0;
+}*/
+
+int main(int argc, char ** argv){
   if(argc < 2){
     fprintf(stderr, "Too few arguments. Usage is ./sorter -c [sortcol] -d [in directory] -o [out directory]");
     return 0;
   }
-  if(argv[1] != "-c"){
+  if(strcmp(argv[1],"-c") != 0){
     fprintf(stderr, "Expecting -c flag. Usage is './sorter -c [sortcol] -d [in directory] -o [out directory]'");
     return 0;
   }
@@ -54,53 +65,72 @@ int main(int argc, char * argv[]){
   }
 
   //load input and output directory
-  char currDir[1024];
+  char inDir[1024];
   char outDir[1024];
-  if (getcwd(currDir, sizeof(currDir)) == NULL)
+  if (getcwd(inDir, sizeof(inDir)) == NULL)
   {
     fprintf(stderr, "Could not read current working directory.");
     return 0;
   }
-  strcpy(outDir, currDir);
+  strcpy(outDir, inDir);
   if(argc >= 4){
-    if(argv[5] != "-d"){
+    if(strcmp(argv[3],"-d") != 0){
       fprintf(stderr, "Expecting -d flag. Usage is './sorter -c [sortcol] -d [in directory] -o [out directory]'");
       return 0;
     }
-    strcpy(currDir, argv[4]);
+    strcpy(inDir, argv[4]);
   }
   if(argc == 6){
-    if(argv[5] != "-o"){
+    if(strcmp(argv[5],"-o") != 0){
       fprintf(stderr, "Expecting -o flag. Usage is './sorter -c [sortcol] -d [in directory] -o [out directory]'");
       return 0;
     }
     strcpy(outDir, argv[6]);
   }
-  DIR * inputDir = opendir (currDir);
+  DIR * inputDir = opendir (inDir);
   DIR * outputDir = opendir (outDir);
   if (inputDir == NULL || outputDir == NULL) {
       fprintf(stderr,"Malformed directory %s or %s. Please make sure the directory spelling is correct before trying again.",
-       currDir, outDir);
+       inDir, outDir);
       return 0;
   }
-  sortCSVs(inputDir, sortInt, outputDir);
+  sortCSVs(inputDir, inDir, outputDir, outDir, sortInt);
+  closedir(inputDir);
+  closedir(outputDir);
   return 0;
 }
 
-void sortCSVs(DIR * inputDir, int sortByCol, DIR * outputDir){
-  /*
-  fileArr[] = inputDir.files;
-  int index = -1;
-  while (++index < fileArr.size && !fork());
-  file = fileArr[index]
-  if file is a directory{
-    sortCSVs(file)
+void sortCSVs(DIR * inputDir, char * inDir, DIR * outputDir, char * outDir,  int sortByCol){
+  struct dirent* inFile;
+
+  //start each process with a different inFile
+  while((inFile = readdir(inputDir)) != NULL && !fork());
+  if(inFile == NULL){
+    return;
   }
-  sortFile(sortByCol, outdir, file);
-  */
+  //if inFile is a directory (ignore . and ..)
+  if(inFile->d_type == 4 && strstr(inFile->d_name, ".") == NULL){
+    char * directoryName = inFile->d_name;
+    DIR * nestedDir = opendir(directoryName);
+    sortCSVs(nestedDir, directoryName, outputDir, outDir, sortByCol);
+    closedir(nestedDir);
+  }
+  char * name = inFile->d_name;
+  int l = strlen(name);
+  //sort csv files
+  if(name[l-4] == '.' && name[l-3] == 'c' && name[l-2] == 's' && name[l-1] == 'v'){
+      char fileTarget[strlen(inDir) + strlen(name) + 1];
+      strcpy(fileTarget, inDir);
+      strcat(fileTarget, "/");
+      strcat(fileTarget, name);
+      FILE * targetFile = fopen(fileTarget, "r");
+      sortFile(sortByCol, outputDir, targetFile, name);
+      fclose(targetFile);
+  }
+  wait(0);
 }
 
-void sortFile(int sortByCol, DIR * outDir, FILE * sortFile){
+void sortFile(int sortByCol, DIR * outDir, FILE * sortFile, char * filename){
   char * line = NULL;
   size_t nbytes = 0 * sizeof(char);
   Record * prevRec = NULL;
@@ -261,9 +291,10 @@ void sortFile(int sortByCol, DIR * outDir, FILE * sortFile){
   //sort the linked list based off of sort column
   Record ** Shead = mergesort(&head, sortByCol);
   Record * sortedHead = *Shead;
-
+  strcat(filename, "_new.csv");
+  FILE * writeFile = fopen(filename, "w");
   //print CSV to stdout
-  printf("color,director_name,num_critic_for_reviews,duration,director_facebook_likes,"
+  fprintf(writeFile,"color,director_name,num_critic_for_reviews,duration,director_facebook_likes,"
   "actor_3_facebook_likes,actor_2_name,actor_1_facebook_likes,gross,genres,actor_1_name,"
   "movie_title,num_voted_users,cast_total_facebook_likes,actor_3_name,facenumber_in_poster,"
   "plot_keywords,movie_imdb_link,num_user_for_reviews,language,country,content_rating,"
@@ -338,7 +369,7 @@ void sortFile(int sortByCol, DIR * outDir, FILE * sortFile){
     }
 
     if(strchr(r->movie_title, ',') == NULL){ //no commas in this movie title
-      printf("%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n",
+      fprintf(writeFile,"%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n",
             r->color, r->director_name, numCritic, duration,
             directLikes, actor3Likes, r->actor_2_name,
             actor1Likes, gross, r->genres, r->actor_1_name,
@@ -349,7 +380,7 @@ void sortFile(int sortByCol, DIR * outDir, FILE * sortFile){
             aspectRatio, movieLikes);
     }
     else{ //put quotes around the movie title
-      printf("%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,\"%s\",%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n",
+      fprintf(writeFile,"%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,\"%s\",%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n",
               r->color, r->director_name, numCritic, duration,
               directLikes, actor3Likes, r->actor_2_name,
               actor1Likes, gross, r->genres, r->actor_1_name,
@@ -361,19 +392,8 @@ void sortFile(int sortByCol, DIR * outDir, FILE * sortFile){
     }
     Record * temp = sortedHead;
     sortedHead = sortedHead->next;
-    free(&temp->color);
-    free(&temp->director_name);
-    free(&temp->actor_2_name);
-    free(&temp->genres);
-    free(&temp->actor_1_name);
-    free(&temp->movie_title);
-    free(&temp->actor_3_name);
-    free(&temp->plot_keywords);
-    free(&temp->movie_imdb_link);
-    free(&temp->language);
-    free(&temp->country);
-    free(&temp->content_rating);
     free(temp);
   }
+  fclose(writeFile);
   return;
 }

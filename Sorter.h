@@ -38,8 +38,8 @@ Record ** mergesort(Record **, int);
 int count(Record **);
 Record * split(Record **, int);
 Record ** merge(Record **, Record **, int);
-void sortFile(int sortByCol, DIR * outDir, FILE * sortFile);
-void sortCSVs(DIR * inputDir, int sortByCol, DIR * outputDir);
+void sortFile(int sortByCol, DIR * outDir, FILE * sortFile, char * filename);
+void sortCSVs(DIR * inputDir, char * inDir, DIR * outputDir, char * outDir, int sortByCol);
 
 
 #endif
