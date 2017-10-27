@@ -94,13 +94,13 @@ int main(int argc, char ** argv){
        inDir, outDir);
       return 0;
   }
-  sortCSVs(inputDir, inDir, outputDir, outDir, sortInt);
+  sortCSVs(inputDir, inDir, outputDir, outDir, sortInt,argv[2]);
   closedir(inputDir);
   closedir(outputDir);
   return 0;
 }
 
-void sortCSVs(DIR * inputDir, char * inDir, DIR * outputDir, char * outDir,  int sortByCol){
+void sortCSVs(DIR * inputDir, char * inDir, DIR * outputDir, char * outDir,  int sortByCol, char* sortName){
   struct dirent* inFile;
 
   //start each process with a different inFile
@@ -112,7 +112,7 @@ void sortCSVs(DIR * inputDir, char * inDir, DIR * outputDir, char * outDir,  int
   if(inFile->d_type == 4 && strstr(inFile->d_name, ".") == NULL){
     char * directoryName = inFile->d_name;
     DIR * nestedDir = opendir(directoryName);
-    sortCSVs(nestedDir, directoryName, outputDir, outDir, sortByCol);
+    sortCSVs(nestedDir, directoryName, outputDir, outDir, sortByCol,sortName);
     closedir(nestedDir);
   }
   char * name = inFile->d_name;
@@ -124,13 +124,13 @@ void sortCSVs(DIR * inputDir, char * inDir, DIR * outputDir, char * outDir,  int
       strcat(fileTarget, "/");
       strcat(fileTarget, name);
       FILE * targetFile = fopen(fileTarget, "r");
-      sortFile(sortByCol, outputDir, targetFile, name);
+      sortFile(sortByCol, outputDir, targetFile, name,sortName);
       fclose(targetFile);
   }
   wait(0);
 }
 
-void sortFile(int sortByCol, DIR * outDir, FILE * sortFile, char * filename){
+void sortFile(int sortByCol, DIR * outDir, FILE * sortFile, char * filename, char * sortName){
   char * line = NULL;
   size_t nbytes = 0 * sizeof(char);
   Record * prevRec = NULL;
@@ -291,8 +291,13 @@ void sortFile(int sortByCol, DIR * outDir, FILE * sortFile, char * filename){
   //sort the linked list based off of sort column
   Record ** Shead = mergesort(&head, sortByCol);
   Record * sortedHead = *Shead;
-  strcat(filename, "_new.csv");
-  FILE * writeFile = fopen(filename, "w");
+  int l = strlen(filename); char newFile[strlen(filename) + 9 + strlen(sortName)];//9 is for -sorted- and the '\n'
+  if(filename[l-4] == '.' && filename[l-3] == 'c' && filename[l-2] == 's' && filename[l-1] == 'v'){//have .csv at the end.
+  strncpy(newFile,l-4);
+  strcat(newFile,"-sorted-");
+  strcat(newFile,sortName);
+  strcat(newFile,".csv");
+  FILE * writeFile = fopen(newFile, "w");
   //print CSV to stdout
   fprintf(writeFile,"color,director_name,num_critic_for_reviews,duration,director_facebook_likes,"
   "actor_3_facebook_likes,actor_2_name,actor_1_facebook_likes,gross,genres,actor_1_name,"
