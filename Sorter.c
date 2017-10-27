@@ -293,11 +293,19 @@ void sortFile(int sortByCol, DIR * outDir, FILE * sortFile, char * filename, cha
   Record * sortedHead = *Shead;
   int l = strlen(filename); char newFile[strlen(filename) + 9 + strlen(sortName)];//9 is for -sorted- and the '\n'
   if(filename[l-4] == '.' && filename[l-3] == 'c' && filename[l-2] == 's' && filename[l-1] == 'v'){//have .csv at the end.
-  strncpy(newFile,l-4);
+  strncpy(newFile,filename,l-4);
   strcat(newFile,"-sorted-");
   strcat(newFile,sortName);
   strcat(newFile,".csv");
+  }
+  else{
+  strcpy(newFile,filename);
+  strcat(newFile,"-sorted-");
+  strcat(newFile,sortName);
+  strcat(newFile,".csv");
+  }
   FILE * writeFile = fopen(newFile, "w");
+
   //print CSV to stdout
   fprintf(writeFile,"color,director_name,num_critic_for_reviews,duration,director_facebook_likes,"
   "actor_3_facebook_likes,actor_2_name,actor_1_facebook_likes,gross,genres,actor_1_name,"
