@@ -78,17 +78,21 @@ int main(int argc, char ** argv){
       fprintf(stderr, "Expecting -d flag. Usage is './sorter -c [sortcol] -d [in directory] -o [out directory]'");
       return 0;
     }
-    strcpy(inDir, argv[4]);
+    strcat(inDir, "/");
+    strcat(inDir, argv[4]);
   }
-  if(argc == 6){
+  if(argc == 7){
     if(strcmp(argv[5],"-o") != 0){
       fprintf(stderr, "Expecting -o flag. Usage is './sorter -c [sortcol] -d [in directory] -o [out directory]'");
       return 0;
     }
-    strcpy(outDir, argv[6]);
+    strcat(outDir, "/");
+    strcat(outDir, argv[6]);
   }
   DIR * inputDir = opendir (inDir);
   DIR * outputDir = opendir (outDir);
+  printf("DEBUG: outdir is %s\n", outDir);
+  printf("DEBUG: indir is %s\n", inDir);
   if (inputDir == NULL || outputDir == NULL) {
       fprintf(stderr,"Malformed directory %s or %s. Please make sure the directory spelling is correct before trying again.",
        inDir, outDir);
@@ -102,41 +106,43 @@ int main(int argc, char ** argv){
 
 void sortCSVs(DIR * inputDir, char * inDir, DIR * outputDir, char * outDir,  int sortByCol, char* sortName){
   struct dirent* inFile;
-
-  //start each process with a different inFile
-  while((inFile = readdir(inputDir)) != NULL && !fork());
-  if(inFile == NULL){
-    return;
+  //fork for each new inFile
+  while((inFile = readdir(inputDir)) != NULL){
+    printf("New file: %s\n", inFile->d_name);
+    if(strcmp(inFile->d_name,".") == 0 || strcmp(inFile->d_name,"..") == 0){
+      continue;
+    }
+    //if inFile is a directory
+    if(inFile->d_type == 4){
+      char * directoryName = inFile->d_name;
+      DIR * nestedDir = opendir(directoryName);
+      sortCSVs(nestedDir, directoryName, outputDir, outDir, sortByCol,sortName);
+      closedir(nestedDir);
+    }
+    char * name = inFile->d_name;
+    int l = strlen(name);
+    //sort csv files
+    if(name[l-4] == '.' && name[l-3] == 'c' && name[l-2] == 's' && name[l-1] == 'v'){
+        char fileTarget[strlen(inDir) + strlen(name) + 1];
+        strcpy(fileTarget, inDir);
+        strcat(fileTarget, "/");
+        strcat(fileTarget, name);
+        FILE * targetFile = fopen(fileTarget, "r");
+        printf("OUT: %s\n",outDir);
+        sortFile(sortByCol, outputDir,outDir, targetFile, name,sortName);
+        fclose(targetFile);
+    }
   }
-  //if inFile is a directory (ignore . and ..)
-  if(inFile->d_type == 4 && strstr(inFile->d_name, ".") == NULL){
-    char * directoryName = inFile->d_name;
-    DIR * nestedDir = opendir(directoryName);
-    sortCSVs(nestedDir, directoryName, outputDir, outDir, sortByCol,sortName);
-    closedir(nestedDir);
-  }
-  char * name = inFile->d_name;
-  int l = strlen(name);
-  //sort csv files
-  if(name[l-4] == '.' && name[l-3] == 'c' && name[l-2] == 's' && name[l-1] == 'v'){
-      char fileTarget[strlen(inDir) + strlen(name) + 1];
-      strcpy(fileTarget, inDir);
-      strcat(fileTarget, "/");
-      strcat(fileTarget, name);
-      FILE * targetFile = fopen(fileTarget, "r");
-      sortFile(sortByCol, outputDir, targetFile, name,sortName);
-      fclose(targetFile);
-  }
-  wait(0);
 }
 
-void sortFile(int sortByCol, DIR * outDir, FILE * sortFile, char * filename, char * sortName){
+void sortFile(int sortByCol, DIR * outDir, char * outDirString, FILE * sortFile, char * filename, char * sortName){
+  int pid = getpid();
   char * line = NULL;
   size_t nbytes = 0 * sizeof(char);
   Record * prevRec = NULL;
   Record * head = NULL;
   getline(&line, &nbytes, sortFile); //skip over first row (just the table headers)
-
+  printf("%d LOOPING %s\n",pid, filename);
   //eat sortFile line by line
   while (getline(&line, &nbytes, sortFile) != -1) {
     head = (Record *)malloc(sizeof(Record));
@@ -287,24 +293,23 @@ void sortFile(int sortByCol, DIR * outDir, FILE * sortFile, char * filename, cha
     head->next = prevRec;
     prevRec = head;
   }
+  printf("%d SORTING %s\n",pid,filename);
 
   //sort the linked list based off of sort column
   Record ** Shead = mergesort(&head, sortByCol);
   Record * sortedHead = *Shead;
-  int l = strlen(filename); char newFile[strlen(filename) + 9 + strlen(sortName)];//9 is for -sorted- and the '\n'
-  if(filename[l-4] == '.' && filename[l-3] == 'c' && filename[l-2] == 's' && filename[l-1] == 'v'){//have .csv at the end.
-  strncpy(newFile,filename,l-4);
-  strcat(newFile,"-sorted-");
-  strcat(newFile,sortName);
-  strcat(newFile,".csv");
-  }
-  else{
-  strcpy(newFile,filename);
-  strcat(newFile,"-sorted-");
-  strcat(newFile,sortName);
-  strcat(newFile,".csv");
-  }
-  FILE * writeFile = fopen(newFile, "w");
+  int l = strlen(filename) - 4;
+  char newFile[l];
+  strncpy(newFile, filename, l); //trim .csv
+  char output[strlen(outDirString) + strlen(newFile) + strlen(sortName) + 13];
+  strcpy(output, outDirString);
+  strcat(output, "/");
+  strcat(output, newFile);
+  strcat(output, "-sorted-");
+  strcat(output, sortName);
+  strcat(output, ".csv");
+  FILE * writeFile = fopen(output, "w");
+  printf("%d WRITING %s\n", pid, output);
 
   //print CSV to stdout
   fprintf(writeFile,"color,director_name,num_critic_for_reviews,duration,director_facebook_likes,"
@@ -313,6 +318,7 @@ void sortFile(int sortByCol, DIR * outDir, FILE * sortFile, char * filename, cha
   "plot_keywords,movie_imdb_link,num_user_for_reviews,language,country,content_rating,"
   "budget,title_year,actor_2_facebook_likes,imdb_score,aspect_ratio,movie_facebook_likes\n");
 
+  puts("writing");
   while(sortedHead != NULL){
     Record * r = sortedHead;
     char numCritic[50] = "";
@@ -407,6 +413,7 @@ void sortFile(int sortByCol, DIR * outDir, FILE * sortFile, char * filename, cha
     sortedHead = sortedHead->next;
     free(temp);
   }
+  puts("closing and returning");
   fclose(writeFile);
   return;
 }
