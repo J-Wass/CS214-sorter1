@@ -80,7 +80,7 @@ int main(int argc, char ** argv){
     }
     strcpy(inDir, argv[4]);
   }
-  if(argc == 6){
+  if(argc == 7){
     if(strcmp(argv[5],"-o") != 0){
       fprintf(stderr, "Expecting -o flag. Usage is './sorter -c [sortcol] -d [in directory] -o [out directory]'");
       return 0;
@@ -94,25 +94,41 @@ int main(int argc, char ** argv){
        inDir, outDir);
       return 0;
   }
-  sortCSVs(inputDir, inDir, outputDir, outDir, sortInt,argv[2]);
+  int ppid = getpid();
+  sortCSVs(inputDir, inDir, outputDir, outDir, sortInt,sortByCol, ppid);
   closedir(inputDir);
   closedir(outputDir);
   return 0;
 }
 
-void sortCSVs(DIR * inputDir, char * inDir, DIR * outputDir, char * outDir,  int sortByCol, char* sortName){
+void sortCSVs(DIR * inputDir, char * inDir, DIR * outputDir, char * outDir,  int sortByCol, char* sortName, int main_proc){
   struct dirent* inFile;
 
   //start each process with a different inFile
-  while((inFile = readdir(inputDir)) != NULL && !fork());
-  if(inFile == NULL){
-    return;
+  pid_t child_pid;
+  while((inFile = readdir(inputDir)) != NULL && !(child_pid=fork()));
+  int pid = getpid();
+  //printf("SPAWNING %d\n", pid);
+  //printf("%d: SPAWNING %d\n", pid, child_pid);
+  if(inFile == NULL || strcmp(inFile->d_name, ".") == 0 || strcmp(inFile->d_name, "..") == 0){
+    int status;
+    if(child_pid > 0){
+      printf("%d: waiting for %d\n",pid, child_pid);
+      waitpid(child_pid, &status, 0);
+      printf("%d: done waiting for %d\n",pid, child_pid);
+    }
+    printf("%d: EXITING\n", pid);
+    exit(0);
   }
   //if inFile is a directory (ignore . and ..)
-  if(inFile->d_type == 4 && strstr(inFile->d_name, ".") == NULL){
-    char * directoryName = inFile->d_name;
+  if(inFile->d_type == 4){
+    char * directoryName;
+    strcpy(directoryName, outDir);
+    strcat(directoryName, "/");
+    strcat(directoryName, inFile->d_name);
     DIR * nestedDir = opendir(directoryName);
-    sortCSVs(nestedDir, directoryName, outputDir, outDir, sortByCol,sortName);
+    printf("%d: NEW DIRECTORY FOUND - %s\n",pid, directoryName);
+    sortCSVs(nestedDir, directoryName, outputDir, outDir, sortByCol,sortName, main_proc);
     closedir(nestedDir);
   }
   char * name = inFile->d_name;
@@ -124,10 +140,21 @@ void sortCSVs(DIR * inputDir, char * inDir, DIR * outputDir, char * outDir,  int
       strcat(fileTarget, "/");
       strcat(fileTarget, name);
       FILE * targetFile = fopen(fileTarget, "r");
+      printf("%d: NEW FILE FOUND - %s\n",pid, fileTarget);
       sortFile(sortByCol, outputDir, targetFile, name,sortName);
       fclose(targetFile);
   }
-  wait(0);
+  if(child_pid > 0){
+    int status;
+    printf("%d: waiting for %d\n",pid, child_pid);
+    waitpid(child_pid, &status, 0);
+    printf("%d: done waiting for %d\n",pid, child_pid);
+  }
+  if(pid != main_proc){
+    printf("%d: FINISHED AND EXITING\n", pid);
+    exit(0); //kys
+  }
+   printf("%d: LAST PROC FINISHED\n", pid);
 }
 
 void sortFile(int sortByCol, DIR * outDir, FILE * sortFile, char * filename, char * sortName){
@@ -291,19 +318,14 @@ void sortFile(int sortByCol, DIR * outDir, FILE * sortFile, char * filename, cha
   //sort the linked list based off of sort column
   Record ** Shead = mergesort(&head, sortByCol);
   Record * sortedHead = *Shead;
-  int l = strlen(filename); char newFile[strlen(filename) + 9 + strlen(sortName)];//9 is for -sorted- and the '\n'
-  if(filename[l-4] == '.' && filename[l-3] == 'c' && filename[l-2] == 's' && filename[l-1] == 'v'){//have .csv at the end.
-  strncpy(newFile,filename,l-4);
+  int l = strlen(filename);
+  char newFile[(l-4) + 14 + strlen(sortName)];//13 is for -sorted- + .csv + \0
+  strncpy(newFile,filename,l - 4);//l-4 to trim the .csv extension
   strcat(newFile,"-sorted-");
   strcat(newFile,sortName);
   strcat(newFile,".csv");
-  }
-  else{
-  strcpy(newFile,filename);
-  strcat(newFile,"-sorted-");
-  strcat(newFile,sortName);
-  strcat(newFile,".csv");
-  }
+  strcat(newFile, "\0");
+  printf("%d: WRITING %s\n", getpid(), newFile);
   FILE * writeFile = fopen(newFile, "w");
 
   //print CSV to stdout
