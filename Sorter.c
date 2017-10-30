@@ -64,7 +64,7 @@ int main(int argc, char ** argv){
     return 0;
   }
 
-  //load input and output directory
+  //load input and output directory to current working directory
   char inDir[1024];
   char outDir[1024];
   if (getcwd(inDir, sizeof(inDir)) == NULL)
@@ -73,64 +73,108 @@ int main(int argc, char ** argv){
     return 0;
   }
   strcpy(outDir, inDir);
+  //has -o or -d flags
   if(argc >= 4){
-    if(strcmp(argv[3],"-d") != 0){
-      fprintf(stderr, "Expecting -d flag. Usage is './sorter -c [sortcol] -d [in directory] -o [out directory]'");
+    // ./sorter -c [col] -d [dir]
+    if(strcmp(argv[3],"-d") == 0){
+      strcpy(inDir, argv[4]);
+      strcpy(outDir, inDir);
+      // ./sorter -c [col] -d [dir] -o [dir]
+      if(argc == 7){
+        if(strcmp(argv[5],"-o") == 0){
+          strcpy(outDir, argv[6]);
+        }
+        else{
+          fprintf(stderr, "Expecting -o flag. Usage is './sorter -c [sortcol] -d [in directory] -o [out directory]'");
+          return 0;
+        }
+      }
+    }
+    // ./sorter -c [col] -o [dir]
+    else if(strcmp(argv[3],"-o") == 0)
+    {
+      strcpy(outDir, argv[4]);
+    }
+    else{
+      fprintf(stderr, "Expecting -d or -o flag. Usage is './sorter -c [sortcol] -d [in directory] -o [out directory]'");
       return 0;
     }
-    strcpy(inDir, argv[4]);
-  }
-  if(argc == 6){
-    if(strcmp(argv[5],"-o") != 0){
-      fprintf(stderr, "Expecting -o flag. Usage is './sorter -c [sortcol] -d [in directory] -o [out directory]'");
-      return 0;
-    }
-    strcpy(outDir, argv[6]);
   }
   DIR * inputDir = opendir (inDir);
   DIR * outputDir = opendir (outDir);
-  if (inputDir == NULL || outputDir == NULL) {
-      fprintf(stderr,"Malformed directory %s or %s. Please make sure the directory spelling is correct before trying again.",
-       inDir, outDir);
+  if (inputDir == NULL) {
+      fprintf(stderr,"Malformed input directory %s. Please make sure the directory spelling is correct before trying again.\n",
+       inDir);
       return 0;
   }
-  sortCSVs(inputDir, inDir, outputDir, outDir, sortInt,argv[2]);
+  if (outputDir == NULL) {
+      fprintf(stderr,"Malformed output directory %s. Please make sure the directory spelling is correct before trying again.\n",
+       outDir);
+      return 0;
+  }
+  int ppid = getpid();
+  printf("Initial PID: %d\n", ppid);
+  printf("PIDS of all child processes:\n");
+  //printf("outdir: %s\n", outDir);
+  //printf("indir: %s\n", inDir);
+  sortCSVs(inputDir, inDir, outputDir, outDir, sortInt,sortByCol, ppid);
   closedir(inputDir);
   closedir(outputDir);
+  if(getpid() == ppid){
+    puts("");
+  }
   return 0;
 }
 
-void sortCSVs(DIR * inputDir, char * inDir, DIR * outputDir, char * outDir,  int sortByCol, char* sortName){
+void sortCSVs(DIR * inputDir, char * inDir, DIR * outputDir, char * outDir,  int sortByCol, char* sortName, int main_proc){
   struct dirent* inFile;
-
-  //start each process with a different inFile
-  while((inFile = readdir(inputDir)) != NULL && !fork());
-  if(inFile == NULL){
-    return;
-  }
-  //if inFile is a directory (ignore . and ..)
-  if(inFile->d_type == 4 && strstr(inFile->d_name, ".") == NULL){
-    char * directoryName = inFile->d_name;
-    DIR * nestedDir = opendir(directoryName);
-    sortCSVs(nestedDir, directoryName, outputDir, outDir, sortByCol,sortName);
-    closedir(nestedDir);
+  pid_t child_pid;
+  while((inFile = readdir(inputDir)) != NULL && !(child_pid=fork()));
+  int pid = getpid();
+  if(pid != main_proc){
+    printf("%d ", pid);
   }
   char * name = inFile->d_name;
   int l = strlen(name);
-  //sort csv files
-  if(name[l-4] == '.' && name[l-3] == 'c' && name[l-2] == 's' && name[l-1] == 'v'){
-      char fileTarget[strlen(inDir) + strlen(name) + 1];
-      strcpy(fileTarget, inDir);
-      strcat(fileTarget, "/");
-      strcat(fileTarget, name);
-      FILE * targetFile = fopen(fileTarget, "r");
-      sortFile(sortByCol, outputDir, targetFile, name,sortName);
-      fclose(targetFile);
+  //8 = regular file
+  if(inFile->d_type == 8 && name[l-4] == '.' && name[l-3] == 'c' && name[l-2] == 's' && name[l-1] == 'v'){
+    //printf("%d: FILE FOUND - %s\n", pid, name);
+    char path[strlen(inDir) + 1 + strlen(name)];
+    strcpy(path, inDir);
+    strcat(path, "/");
+    strcat(path, name);
+    FILE * readFile = fopen(path, "r");
+    sortFile(sortByCol, outDir, readFile, name, sortName);
+    fclose(readFile);
   }
-  wait(0);
+  //4 = directory, ignore ".." and "." directories
+  if(inFile->d_type == 4 && strcmp(name, "..") != 0 && strcmp(name, ".") != 0){
+    //printf("%d: DIRECTORY FOUND - %s\n", pid, name);
+    char newDir[1 + strlen(inDir) + strlen(name)];
+    strcpy(newDir, inDir);
+    strcat(newDir, "/");
+    strcat(newDir, name);
+    DIR * open = opendir(newDir);
+    //create fork, make child sort the following directory
+    int newPid = fork();
+    if(newPid == 0){
+      sortCSVs(open, newDir, outputDir, outDir, sortByCol, sortName, pid);
+    }
+    //parent waits for child to iterate entire directory before continuing
+    if(newPid != 0){
+      //printf("%d: waiting for dirProc %d\n", pid, newPid);
+      int status;
+      waitpid(newPid, &status, 0);
+      //printf("%d: done waiting for dirProc %d\n", pid, newPid);
+    }
+  }
+  //printf("%d: waiting for %d\n", pid, child_pid);
+  int status;
+  waitpid(child_pid, &status, 0);
+  //printf("%d: done waiting for %d\n", pid, child_pid);
 }
 
-void sortFile(int sortByCol, DIR * outDir, FILE * sortFile, char * filename, char * sortName){
+void sortFile(int sortByCol, char * outDirString, FILE * sortFile, char * filename, char * sortName){
   char * line = NULL;
   size_t nbytes = 0 * sizeof(char);
   Record * prevRec = NULL;
@@ -291,22 +335,18 @@ void sortFile(int sortByCol, DIR * outDir, FILE * sortFile, char * filename, cha
   //sort the linked list based off of sort column
   Record ** Shead = mergesort(&head, sortByCol);
   Record * sortedHead = *Shead;
-  int l = strlen(filename); char newFile[strlen(filename) + 9 + strlen(sortName)];//9 is for -sorted- and the '\n'
-  if(filename[l-4] == '.' && filename[l-3] == 'c' && filename[l-2] == 's' && filename[l-1] == 'v'){//have .csv at the end.
-  strncpy(newFile,filename,l-4);
+  int l = strlen(filename);
+  char newFile[(l-4) + 13 + strlen(outDirString) + strlen(sortName)];//13 is for -sorted- + .csv + new slash
+  strcpy(newFile, outDirString);
+  strcat(newFile, "/");
+  strncat(newFile,filename,l - 4);//l-4 to trim the .csv extension
   strcat(newFile,"-sorted-");
   strcat(newFile,sortName);
   strcat(newFile,".csv");
-  }
-  else{
-  strcpy(newFile,filename);
-  strcat(newFile,"-sorted-");
-  strcat(newFile,sortName);
-  strcat(newFile,".csv");
-  }
+  //printf("%d: WRITING %s\n", getpid(), newFile);
   FILE * writeFile = fopen(newFile, "w");
 
-  //print CSV to stdout
+  //print CSV header to file
   fprintf(writeFile,"color,director_name,num_critic_for_reviews,duration,director_facebook_likes,"
   "actor_3_facebook_likes,actor_2_name,actor_1_facebook_likes,gross,genres,actor_1_name,"
   "movie_title,num_voted_users,cast_total_facebook_likes,actor_3_name,facenumber_in_poster,"
