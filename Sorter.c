@@ -115,8 +115,16 @@ int main(int argc, char ** argv){
   int ppid = getpid();
   printf("Initial PID: %d\n", ppid);
   printf("PIDS of all child processes: ");
-  fflush(stdout); 
-  sortCSVs(inputDir, inDir, outputDir, outDir, sortInt,sortByCol, ppid, ppid);
+  fflush(stdout);
+  int initial_proc = fork();
+  if(initial_proc == 0){
+    sortCSVs(inputDir, inDir, outputDir, outDir, sortInt,sortByCol);
+  }
+  else{
+    int status;
+    waitpid(initial_proc, &status, 0);
+    printf("\nTotal number of processes: %d\n", status);
+  }
   closedir(inputDir);
   closedir(outputDir);
   if(getpid() == ppid){
@@ -125,7 +133,7 @@ int main(int argc, char ** argv){
   return 0;
 }
 
-void sortCSVs(DIR * inputDir, char * inDir, DIR * outputDir, char * outDir,  int sortByCol, char* sortName, int main_proc, int initial_proc){
+void sortCSVs(DIR * inputDir, char * inDir, DIR * outputDir, char * outDir,  int sortByCol, char* sortName){
   struct dirent* inFile;
   pid_t child_pid;
   char * isSorted;
@@ -144,13 +152,11 @@ void sortCSVs(DIR * inputDir, char * inDir, DIR * outputDir, char * outDir,  int
     char * name = inFile->d_name;
     int prevProcesses = 0;
     int l = strlen(name);
-
     int pid = getpid();
-    if(pid != main_proc){
+    //if(pid != main_proc){
       printf("%d, ", pid);
       fflush(stdout);
-    }
-
+    //}
     //REGULAR FILE
     if(inFile->d_type == 8 && name[l-4] == '.' && name[l-3] == 'c' && name[l-2] == 's' && name[l-1] == 'v'){
       char path[strlen(inDir) + 1 + strlen(name)];
@@ -171,7 +177,7 @@ void sortCSVs(DIR * inputDir, char * inDir, DIR * outputDir, char * outDir,  int
       //create fork, make child sort the following directory
       int newPid = fork();
       if(newPid == 0){
-        sortCSVs(open, newDir, outputDir, outDir, sortByCol, sortName, pid, initial_proc);
+        sortCSVs(open, newDir, outputDir, outDir, sortByCol, sortName);
       }
       //parent waits for child to iterate entire directory before continuing
       if(newPid != 0){
@@ -185,14 +191,9 @@ void sortCSVs(DIR * inputDir, char * inDir, DIR * outputDir, char * outDir,  int
     if(status >= 0){
       prevProcesses += status;
     }
-    if(pid != main_proc){
-      exit(prevProcesses+1); //children exit
-    }
-    if(pid == initial_proc){
-      printf("\nTotal number of processes: %d\n", prevProcesses);
-    }
-    break; //parent returns to main
+    exit(prevProcesses+1);
   }
+  exit(0);
 }
 
 void sortFile(int sortByCol, char * outDirString, FILE * sortFile, char * filename, char * sortName){
