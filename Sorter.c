@@ -138,6 +138,11 @@ void sortCSVs(DIR * inputDir, char * inDir, DIR * outputDir, char * outDir,  int
   int l = strlen(name);
   //8 = regular file
   if(inFile->d_type == 8 && name[l-4] == '.' && name[l-3] == 'c' && name[l-2] == 's' && name[l-1] == 'v'){
+  	char * isSorted;
+  	isSorted = strstr(name,"-sorted-");
+  	if(isSorted){//do not run sort file and skip this csv
+  	return;
+  	}
     //printf("%d: FILE FOUND - %s\n", pid, name);
     char path[strlen(inDir) + 1 + strlen(name)];
     strcpy(path, inDir);
