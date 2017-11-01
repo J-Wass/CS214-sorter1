@@ -129,7 +129,16 @@ int main(int argc, char ** argv){
 void sortCSVs(DIR * inputDir, char * inDir, DIR * outputDir, char * outDir,  int sortByCol, char* sortName, int main_proc){
   struct dirent* inFile;
   pid_t child_pid;
-  while((inFile = readdir(inputDir)) != NULL && !(child_pid=fork()));
+  char * isSorted;
+  while((inFile = readdir(inputDir)) != NULL){
+  isSorted = strstr(inFile->d_name, "-sorted-");
+  if(isSorted){//contains -sorted- in the name of the file 
+  	return;
+  }
+  child_pid=fork();
+  if(child_pid != 0){
+  	continue;
+  }
   int pid = getpid();
   if(pid != main_proc){
     printf("%d ", pid);
@@ -138,11 +147,6 @@ void sortCSVs(DIR * inputDir, char * inDir, DIR * outputDir, char * outDir,  int
   int l = strlen(name);
   //8 = regular file
   if(inFile->d_type == 8 && name[l-4] == '.' && name[l-3] == 'c' && name[l-2] == 's' && name[l-1] == 'v'){
-  	char * isSorted;
-  	isSorted = strstr(name,"-sorted-");
-  	if(isSorted){//do not run sort file and skip this csv
-  	return;
-  	}
     //printf("%d: FILE FOUND - %s\n", pid, name);
     char path[strlen(inDir) + 1 + strlen(name)];
     strcpy(path, inDir);
@@ -178,7 +182,7 @@ void sortCSVs(DIR * inputDir, char * inDir, DIR * outputDir, char * outDir,  int
   waitpid(child_pid, &status, 0);
   //printf("%d: done waiting for %d\n", pid, child_pid);
 }
-
+}
 void sortFile(int sortByCol, char * outDirString, FILE * sortFile, char * filename, char * sortName){
   char * line = NULL;
   size_t nbytes = 0 * sizeof(char);
