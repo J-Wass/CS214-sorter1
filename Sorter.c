@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/mman.h>
 #include "Sorter.h"
 #include "mergesort.c"
 
@@ -18,6 +19,7 @@
   fclose(file);
   return 0;
 }*/
+static int *processCount;
 
 int main(int argc, char ** argv){
   if(argc < 2){
@@ -116,14 +118,15 @@ int main(int argc, char ** argv){
   printf("Initial PID: %d\n", ppid);
   printf("PIDS of all child processes: ");
   fflush(stdout);
+  processCount = mmap(NULL, sizeof(int), PROT_READ|PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
   int initial_proc = fork();
   if(initial_proc == 0){
-    sortCSVs(inputDir, inDir, outputDir, outDir, sortInt,sortByCol);
+    sortCSVs(inputDir, inDir, outputDir, outDir, sortInt, sortByCol);
   }
   else{
     int status;
     waitpid(initial_proc, &status, 0);
-    printf("\nTotal number of processes: %d\n", status);
+    printf("\nTotal number of processes: %d\n", *processCount + 1);
   }
   closedir(inputDir);
   closedir(outputDir);
@@ -149,14 +152,12 @@ void sortCSVs(DIR * inputDir, char * inDir, DIR * outputDir, char * outDir,  int
     if(child_pid == 0){
     	continue; //child gets next file, parent continues
     }
+    *processCount = (*processCount)+1;
     char * name = inFile->d_name;
-    int prevProcesses = 0;
     int l = strlen(name);
     int pid = getpid();
-    //if(pid != main_proc){
-      printf("%d, ", pid);
-      fflush(stdout);
-    //}
+    printf("%d, ", pid);
+    fflush(stdout);
     //REGULAR FILE
     if(inFile->d_type == 8 && name[l-4] == '.' && name[l-3] == 'c' && name[l-2] == 's' && name[l-1] == 'v'){
       char path[strlen(inDir) + 1 + strlen(name)];
@@ -183,15 +184,11 @@ void sortCSVs(DIR * inputDir, char * inDir, DIR * outputDir, char * outDir,  int
       if(newPid != 0){
         int status;
         waitpid(newPid, &status, 0);
-        prevProcesses += status;
       }
     }
     int status;
     waitpid(child_pid, &status, 0);
-    if(status >= 0){
-      prevProcesses += status;
-    }
-    exit(prevProcesses+1);
+    exit(0);
   }
   exit(0);
 }
