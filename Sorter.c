@@ -177,12 +177,13 @@ void sortCSVs(DIR * inputDir, char * inDir, DIR * outputDir, char * outDir,  int
       //printf("%d: done waiting for dirProc %d\n", pid, newPid);
     }
   }
+  }
   //printf("%d: waiting for %d\n", pid, child_pid);
   int status;
   waitpid(child_pid, &status, 0);
   //printf("%d: done waiting for %d\n", pid, child_pid);
 }
-}
+
 void sortFile(int sortByCol, char * outDirString, FILE * sortFile, char * filename, char * sortName){
   char * line = NULL;
   size_t nbytes = 0 * sizeof(char);
